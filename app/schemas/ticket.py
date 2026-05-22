@@ -12,6 +12,7 @@ class TicketBase(BaseModel):
     severity: TicketSeverity = Field(default=TicketSeverity.MEDIUM)
     reporter: Optional[str] = None
     assigned_to: Optional[str] = None
+    due_at: Optional[datetime] = None
     asset_id: Optional[int] = None
 
 class TicketCreate(TicketBase):
@@ -26,6 +27,7 @@ class TicketUpdate(BaseModel):
     severity: Optional[TicketSeverity] = None
     reporter: Optional[str] = None
     assigned_to: Optional[str] = None
+    due_at: Optional[datetime] = None
     asset_id: Optional[int] = None
 
 class TicketRead(TicketBase):

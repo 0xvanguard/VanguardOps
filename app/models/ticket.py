@@ -36,6 +36,7 @@ class Ticket(Base):
     
     reporter = Column(String, nullable=True)
     assigned_to = Column(String, nullable=True)
+    due_at = Column(DateTime, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
