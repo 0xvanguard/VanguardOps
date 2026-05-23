@@ -44,6 +44,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      - name: Verify no pending Alembic migrations (fail-fast)
+        # If a developer changed a model without generating a revision,
+        # ``alembic check`` exits non-zero and the whole job aborts before
+        # we burn time on pytest. Cheap insurance against schema drift.
+        env:
+          ENVIRONMENT: test
+          SECRET_KEY: ci-secret-key-must-be-at-least-thirty-two-characters-long
+          DATABASE_URL: sqlite:///./alembic-check.db
+        run: |
+          rm -f alembic-check.db
+          alembic upgrade head
+          alembic check
+
       - name: Run tests with coverage
         env:
           ENVIRONMENT: test
