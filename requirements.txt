@@ -39,6 +39,10 @@ pytest-cov>=5.0.0
 pytest-asyncio>=0.23.0
 factory-boy>=3.3.0
 freezegun>=1.4.0
+# Integration tests: spin up real Postgres/Redis containers from pytest.
+# Requires a Docker daemon; tests guarded behind the ``integration`` marker
+# so the default ``pytest`` run stays fast and offline-friendly.
+testcontainers>=4.7.0
 
 # --- Lint / format ---
 ruff>=0.4.0

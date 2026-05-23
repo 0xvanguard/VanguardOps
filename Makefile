@@ -12,8 +12,14 @@ dev: ## Run the API locally with hot reload
 worker: ## Run a Celery worker
 	celery -A app.workers.celery_app worker --loglevel=info
 
-test: ## Run the full test suite
+test: ## Run the fast test suite (no Docker required)
 	pytest
+
+test-integration: ## Run integration tests against ephemeral Postgres/Redis (requires Docker)
+	pytest -m integration -v
+
+test-all: ## Run unit + integration tests
+	pytest -m '' -v
 
 test-cov: ## Run tests with coverage report
 	pytest --cov=app --cov-report=term-missing --cov-report=html
