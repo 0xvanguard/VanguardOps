@@ -1,10 +1,22 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum, JSON, ForeignKey
-from sqlalchemy.orm import relationship
-from datetime import datetime
-import enum
-from app.database import Base
+"""Workflow execution record (one row per dispatched async run)."""
 
-class WorkflowStatus(str, enum.Enum):
+from __future__ import annotations
+
+import enum
+from typing import TYPE_CHECKING, Any
+
+from sqlalchemy import JSON, ForeignKey, String
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.database import Base
+from app.models._mixins import TimestampMixin
+
+if TYPE_CHECKING:  # pragma: no cover
+    from app.models.ticket import Ticket
+
+
+class WorkflowStatus(enum.StrEnum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
@@ -12,23 +24,33 @@ class WorkflowStatus(str, enum.Enum):
     RETRYING = "RETRYING"
     CANCELLED = "CANCELLED"
 
-class Workflow(Base):
+
+# Terminal states that should never transition again.
+TERMINAL_WORKFLOW_STATUSES: set[WorkflowStatus] = {
+    WorkflowStatus.SUCCESS,
+    WorkflowStatus.FAILED,
+    WorkflowStatus.CANCELLED,
+}
+
+
+class Workflow(Base, TimestampMixin):
     __tablename__ = "workflows"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    trigger_type = Column(String, index=True)
-    description = Column(String, nullable=True)
-    status = Column(Enum(WorkflowStatus), default=WorkflowStatus.PENDING)
-    
-    ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=True)
-    
-    # Store dynamic workflow definition or execution result data
-    config_data = Column(JSON, nullable=True)
-    execution_logs = Column(JSON, nullable=True)
-    
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
-    ticket = relationship("Ticket", backref="workflows")
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    trigger_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    status: Mapped[WorkflowStatus] = mapped_column(
+        SAEnum(WorkflowStatus, name="workflow_status"),
+        nullable=False,
+        default=WorkflowStatus.PENDING,
+    )
+
+    ticket_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tickets.id", ondelete="CASCADE"), nullable=True
+    )
+    ticket: Mapped[Ticket | None] = relationship(back_populates="workflows")
+
+    # Free-form JSON for inputs / results; schema is per-workflow-name.
+    config_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    execution_logs: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
