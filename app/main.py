@@ -4,7 +4,6 @@ Wires up:
 
 * configuration & structured logging (must be first),
 * CORS, security headers, request-id correlation,
-* rate limiting,
 * Prometheus metrics middleware + /metrics endpoint,
 * RFC 7807 error handlers,
 * the v1 API router and a minimal static frontend.
@@ -17,13 +16,10 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from starlette.middleware.gzip import GZipMiddleware
 
 from app.api.endpoints.health import router as health_router
@@ -40,15 +36,6 @@ from app.core.observability import PrometheusMiddleware
 from app.schemas.common import ProblemDetails
 
 STATIC_DIR = Path(__file__).parent / "static"
-
-# ---------------------------------------------------------------------------
-# Rate limiter (shared module-level so handlers can decorate routes)
-# ---------------------------------------------------------------------------
-
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=[],  # opt-in per route
-)
 
 
 @asynccontextmanager
@@ -105,7 +92,6 @@ def create_app() -> FastAPI:
             429: {"model": ProblemDetails, "description": "Too Many Requests"},
         },
     )
-    app.state.limiter = limiter
 
     # --- Middlewares (order matters: outermost added last) ---
     app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -123,21 +109,6 @@ def create_app() -> FastAPI:
 
     # --- Error handlers ---
     register_error_handlers(app)
-
-    @app.exception_handler(RateLimitExceeded)
-    async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
-        return JSONResponse(
-            status_code=429,
-            content={
-                "type": "https://errors.vanguardops.dev/rate_limited",
-                "title": "Too Many Requests",
-                "status": 429,
-                "detail": "Rate limit exceeded. Slow down and retry.",
-                "code": "rate_limited",
-                "instance": str(request.url.path),
-            },
-            media_type="application/problem+json",
-        )
 
     # --- Routers ---
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)

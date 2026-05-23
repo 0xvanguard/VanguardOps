@@ -28,7 +28,8 @@ prometheus-client>=0.20.0
 structlog>=24.1.0
 
 # --- Rate limiting & security ---
-slowapi>=0.1.9
+# Rate limiting is implemented in-house (sliding-window log over Redis /3),
+# see ADR-008. We do not rely on slowapi.
 
 # --- HTTP client (used by tests and integrations) ---
 httpx>=0.27.0,<1.0.0
