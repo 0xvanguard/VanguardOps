@@ -41,9 +41,18 @@ DbSession = Annotated[Session, Depends(get_db)]
 # ---------------------------------------------------------------------------
 
 _settings = get_settings()
+
+# ``tokenUrl`` MUST point to the form-encoded endpoint (``/auth/login/oauth``);
+# the JSON-body ``/auth/login`` endpoint is incompatible with the standard
+# OAuth2 password grant. Pointing it correctly is what makes the Swagger UI
+# "Authorize" button work natively.
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=f"{_settings.API_V1_PREFIX}/auth/login",
+    tokenUrl=f"{_settings.API_V1_PREFIX}/auth/login/oauth",
     auto_error=False,
+    description=(
+        "JWT Bearer token. Obtain one via POST /auth/login or "
+        "POST /auth/login/oauth (form-encoded)."
+    ),
 )
 
 

@@ -81,6 +81,25 @@ class Settings(BaseSettings):
     # ----- Flower -----
     FLOWER_BASIC_AUTH: str = "admin:ChangeMe!2024"
 
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def _reject_dev_secret_in_production(cls, v: str, info) -> str:
+        """Reject the dev-default SECRET_KEY when ``ENVIRONMENT=production``.
+
+        Pydantic feeds us values in declaration order, so by the time this
+        validator runs ``ENVIRONMENT`` is already in ``info.data``. If a
+        deployment ships the in-repo placeholder, fail fast at import time
+        rather than silently sign tokens with a known-public key.
+        """
+        environment = info.data.get("ENVIRONMENT", "development")
+        if environment == "production" and v.startswith("dev-only-secret"):
+            raise ValueError(
+                "SECRET_KEY must be set to a production-grade value when "
+                "ENVIRONMENT=production. Generate one with "
+                "`python -c 'import secrets; print(secrets.token_urlsafe(64))'`."
+            )
+        return v
+
     # ----- Derived helpers -----
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
