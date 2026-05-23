@@ -15,6 +15,7 @@ Formato basado en el [template de Michael Nygard](https://cognitect.com/blog/201
 | [005](005-celery-claim-atomico.md) | Aceptado | Bloqueo pesimista (`FOR UPDATE SKIP LOCKED`) para workflows |
 | [006](006-docker-hardening-y-aislamiento.md) | Aceptado | Hardening Docker y aislamiento de red en Compose |
 | [007](007-jwt-blacklist-fail-closed.md) | Aceptado | JWT blacklist en Redis con política fail-closed |
+| [008](008-rate-limit-and-ip-banning.md) | Aceptado | Rate limiting (sliding window) + banlist dinámica de IPs |
 
 ## Cómo añadir un ADR
 
