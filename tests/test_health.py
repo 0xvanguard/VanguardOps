@@ -25,8 +25,9 @@ def test_readyz_in_test_mode(client):
     body = response.json()
     assert body["status"] == "ready"
     assert body["checks"]["database"] == "ok"
-    # Redis is intentionally skipped in test mode.
-    assert "redis" not in body["checks"]
+    # Redis (both broker and blacklist) is intentionally skipped in test mode.
+    assert "redis_broker" not in body["checks"]
+    assert "redis_blacklist" not in body["checks"]
 
 
 def test_metrics_endpoint(client):

@@ -31,6 +31,7 @@
 | POST | `/api/v1/auth/login/oauth` | form `username` + `password` | — |
 | POST | `/api/v1/auth/refresh` | `{ refresh_token }` | — |
 | POST | `/api/v1/auth/register` | `UserCreate` | admin |
+| POST | `/api/v1/auth/logout` | `{ refresh_token? }` (opcional) | cualquier rol |
 | GET | `/api/v1/auth/me` | — | cualquier rol |
 
 Header en endpoints protegidos: `Authorization: Bearer <access_token>`.

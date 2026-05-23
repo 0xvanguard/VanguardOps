@@ -143,8 +143,18 @@ def create_refresh_token(
 def decode_token(token: str, *, expected_type: str | None = None) -> TokenPayload:
     """Decode and validate a JWT.
 
-    Raises :class:`InvalidCredentialsError` on any failure so the caller can
-    bubble the problem to the HTTP layer with a single ``except``.
+    Verification order, fastest-first:
+
+    1. **Signature + structural decode** (jwt.decode): rejects malformed,
+       unsigned, or tampered tokens before we touch any external service.
+    2. **Token-type check**: rejects access-where-refresh-was-expected,
+       free of cost.
+    3. **Blacklist lookup** (Redis ``/2``): rejects revoked tokens. See
+       :mod:`app.services.token_blacklist` and ADR-007 for the
+       fail-closed semantics when Redis is unreachable.
+
+    Raises :class:`InvalidCredentialsError` on any failure so the caller
+    can bubble the problem to the HTTP layer with a single ``except``.
     """
     settings = get_settings()
     try:
@@ -159,6 +169,16 @@ def decode_token(token: str, *, expected_type: str | None = None) -> TokenPayloa
         raise InvalidCredentialsError(
             f"Expected a '{expected_type}' token but received '{payload.type}'"
         )
+
+    # Blacklist check (after signature so we never look up an unverified jti).
+    # Lazy import keeps ``app.core.security`` import-safe even when the
+    # token-blacklist module fails to load (e.g. during partial dev setup).
+    if payload.jti:
+        from app.services.token_blacklist import get_blacklist
+
+        if get_blacklist().is_revoked(payload.jti):
+            raise InvalidCredentialsError("Token has been revoked")
+
     return payload
 
 

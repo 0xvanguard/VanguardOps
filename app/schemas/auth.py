@@ -25,6 +25,17 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    """Optional payload for ``POST /auth/logout``.
+
+    The access token is always revoked (read from the ``Authorization``
+    header). When ``refresh_token`` is provided the matching refresh
+    token is also revoked, ending the session decisively.
+    """
+
+    refresh_token: str | None = None
+
+
 class UserBase(BaseModel):
     email: EmailStr
     full_name: str | None = Field(default=None, max_length=255)

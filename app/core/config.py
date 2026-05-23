@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     CELERY_TASK_ALWAYS_EAGER: bool = False
 
+    # ----- JWT blacklist (Redis DB /2) -----
+    # Segregated DB so a routine FLUSHDB on the broker (DB 0) can never
+    # destroy active session revocations. See ADR-007.
+    REDIS_BLACKLIST_URL: str = "redis://localhost:6379/2"
+    JWT_BLACKLIST_ON_REDIS_FAILURE: Literal["closed", "open"] = "closed"
+
     # ----- CORS -----
     CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:8000"])
 
