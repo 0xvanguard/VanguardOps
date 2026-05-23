@@ -82,7 +82,8 @@ Cualquier transición no contemplada responde **409 Conflict** con `code: "inval
 | 409 | `invalid_state_transition` | Cambio de estado no permitido |
 | 409 | `user_already_exists` | Email duplicado en registro |
 | 422 | `validation_error` | Pydantic rechazó la entrada (incluye `errors[]`) |
-| 429 | `rate_limited` | Excedido el límite configurado |
+| 429 | `rate_limited` | Excedido el rate limit del endpoint (incluye `Retry-After`) |
+| 429 | `ip_banned` | IP banneada por abuso repetido (login fails / 404 scanning) |
 | 500 | `internal_error` | Inesperado, ya está logueado por el servidor |
 
 ## Observabilidad

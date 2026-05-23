@@ -33,7 +33,10 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")
-os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+# Rate limiting is intentionally LEFT ENABLED in tests so the middleware's
+# behaviour is exercised on every test run; the per-test FakeRedis fixture
+# resets state between tests, and default per-IP limits (100/min) are well
+# above what any test method emits.
 
 # Ensure the repo root is importable when running ``pytest`` from any cwd.
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -51,6 +54,8 @@ from app.api.deps import get_db  # noqa: E402
 from app.core.security import Role, create_access_token  # noqa: E402
 from app.database import Base  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.services.ip_banlist import IPBanlist, set_banlist  # noqa: E402
+from app.services.rate_limiter import SlidingWindowRateLimiter, set_rate_limiter  # noqa: E402
 from app.services.token_blacklist import TokenBlacklist, set_blacklist  # noqa: E402
 from tests._fakes import FakeRedis  # noqa: E402
 from tests.factories import (  # noqa: E402
@@ -152,6 +157,39 @@ def fake_blacklist() -> Generator[FakeRedis, None, None]:
         yield fake
     finally:
         set_blacklist(None)
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter + IP banlist (FakeRedis injected per test)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def fake_security_redis() -> Generator[FakeRedis, None, None]:
+    """Replace the rate limiter and IP banlist with in-memory fakes.
+
+    Both share the same FakeRedis instance so a test can assert end-to-end
+    interactions (e.g. ``track_auth_failure`` -> ban activated) without
+    juggling two separate stores.
+    """
+    fake = FakeRedis()
+    set_rate_limiter(SlidingWindowRateLimiter(fake, fail_open=True))
+    set_banlist(
+        IPBanlist(
+            fake,
+            # Tighter thresholds in tests so we can hit them cheaply without
+            # generating thousands of requests.
+            auth_failure_threshold=5,
+            auth_failure_window=60,
+            scan_threshold=5,
+            scan_window=60,
+        )
+    )
+    try:
+        yield fake
+    finally:
+        set_rate_limiter(None)
+        set_banlist(None)
 
 
 # ---------------------------------------------------------------------------

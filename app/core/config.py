@@ -83,6 +83,26 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT: str = "100/minute"
     RATE_LIMIT_AUTH: str = "10/minute"
     RATE_LIMIT_ENABLED: bool = True
+    # In-house rate limiter (sliding-window log over Redis DB /3, see ADR-008).
+    # Segregated DB keeps abuse-mitigation state immune to FLUSHDB on the
+    # broker (/0), result backend (/1), or JWT blacklist (/2).
+    RATE_LIMIT_REDIS_URL: str = "redis://localhost:6379/3"
+    # Per-IP per-minute caps for high-criticality endpoints.
+    RATE_LIMIT_LOGIN_PER_IP: int = 5
+    RATE_LIMIT_REFRESH_PER_IP: int = 10
+    RATE_LIMIT_REGISTER_PER_IP: int = 3
+    RATE_LIMIT_API_DEFAULT_PER_IP: int = 100
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    # Dynamic banning thresholds.
+    RATE_LIMIT_AUTH_FAILURE_THRESHOLD: int = 10
+    RATE_LIMIT_AUTH_FAILURE_WINDOW: int = 300  # 5 minutes
+    RATE_LIMIT_404_THRESHOLD: int = 20
+    RATE_LIMIT_404_WINDOW: int = 60  # 1 minute
+    # CIDRs that bypass rate limiting and banning. Comma-separated.
+    RATE_LIMIT_WHITELIST_CIDRS: list[str] = Field(default_factory=list)
+    # When ``True``, honour the first hop in ``X-Forwarded-For`` as the
+    # client IP (only safe behind a trusted reverse proxy / load balancer).
+    TRUST_PROXY: bool = False
 
     # ----- Flower -----
     FLOWER_BASIC_AUTH: str = "admin:ChangeMe!2024"
@@ -107,12 +127,12 @@ class Settings(BaseSettings):
         return v
 
     # ----- Derived helpers -----
-    @field_validator("CORS_ORIGINS", mode="before")
+    @field_validator("CORS_ORIGINS", "RATE_LIMIT_WHITELIST_CIDRS", mode="before")
     @classmethod
-    def _split_cors(cls, v: object) -> object:
-        """Allow ``CORS_ORIGINS`` to be supplied as a comma-separated string."""
+    def _split_csv(cls, v: object) -> object:
+        """Allow list-valued env vars to be supplied as comma-separated strings."""
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            return [item.strip() for item in v.split(",") if item.strip()]
         return v
 
     @property

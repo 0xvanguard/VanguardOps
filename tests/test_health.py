@@ -25,9 +25,11 @@ def test_readyz_in_test_mode(client):
     body = response.json()
     assert body["status"] == "ready"
     assert body["checks"]["database"] == "ok"
-    # Redis (both broker and blacklist) is intentionally skipped in test mode.
+    # Redis (broker, blacklist, rate-limit) is intentionally skipped in
+    # test mode so the unit suite stays hermetic.
     assert "redis_broker" not in body["checks"]
     assert "redis_blacklist" not in body["checks"]
+    assert "redis_rate_limit" not in body["checks"]
 
 
 def test_metrics_endpoint(client):

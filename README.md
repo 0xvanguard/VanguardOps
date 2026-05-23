@@ -304,7 +304,14 @@ Cada contenedor de aplicación corre con `read_only: true`, `cap_drop: [ALL]`, `
 
 * Headers de seguridad globales: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`.
 * CORS configurable por env (`CORS_ORIGINS`).
-* Rate limiting con `slowapi` (configurable por env).
+* Rate limiting con **sliding window log** sobre Redis DB `/3` (ver [ADR-008](docs/adr/008-rate-limit-and-ip-banning.md)). Por endpoint:
+    * `/api/v1/auth/login*` → 5/min por IP
+    * `/api/v1/auth/refresh` → 10/min por IP
+    * `/api/v1/auth/register` → 3/min por IP
+    * resto de `/api/v1/*` → 100/min por IP
+* **Banlist dinámica de IPs**: 10 fallos de auth en 5 min ó 20 respuestas 404 en 1 min activan un ban escalado (15 min → 1 h → 24 h capado). El ban se aplica a *toda* la API, no solo al endpoint donde se generó la señal.
+* `TRUST_PROXY` (default `False`) controla si se honra `X-Forwarded-For`. Solo activarlo cuando hay un balanceador de confianza delante; de lo contrario es un vector clásico de IP spoofing.
+* Whitelist `RATE_LIMIT_WHITELIST_CIDRS` para CIDRs internos (oficinas, monitoring, scanners autorizados) que bypasean rate limiter y banlist.
 
 ---
 

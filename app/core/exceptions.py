@@ -81,6 +81,12 @@ class ConflictError(VanguardOpsError):
     title = "Conflict"
 
 
+class IPBannedError(VanguardOpsError):
+    status_code = 429
+    code = "ip_banned"
+    title = "IP Address Banned"
+
+
 class RateLimitError(VanguardOpsError):
     status_code = 429
     code = "rate_limited"
