@@ -1,10 +1,10 @@
-"""Workflow CRUD operations with atomic state transitions."""
+"""Workflow CRUD operations with row-level locking for concurrent workers."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.crud.base import CRUDBase
@@ -31,28 +31,46 @@ class CRUDWorkflow(CRUDBase[Workflow, WorkflowCreate, WorkflowUpdate]):
         return db.execute(stmt).scalars().all()
 
     def claim_for_execution(self, db: Session, *, workflow_id: int) -> Workflow | None:
-        """Atomically transition PENDING/RETRYING -> RUNNING.
+        """Pessimistically claim a workflow for execution.
 
-        Returns the updated row when the claim succeeded, ``None`` when
-        another worker beat us to it (or the workflow was already terminal).
-        Implemented as a conditional ``UPDATE ... WHERE status IN (...)``
-        which is atomic on every supported backend; eliminates the classic
-        TOCTOU race between ``SELECT`` and ``UPDATE``.
+        Implementation: ``SELECT ... FOR UPDATE SKIP LOCKED`` filtered to rows
+        in a claimable status (``PENDING`` or ``RETRYING``). Three branches
+        return ``None`` *for the same reason* from the caller's point of view
+        (the row should not be executed *now*):
+
+        * the workflow does not exist,
+        * the workflow is in a non-claimable status (terminal or already
+          ``RUNNING``),
+        * the row is locked by another worker (``SKIP LOCKED`` makes our
+          query simply not see it).
+
+        Otherwise we transition the row to ``RUNNING`` and ``commit``, which
+        releases the row-level lock. The caller can then run the (possibly
+        long) workflow body without holding the lock.
+
+        On PostgreSQL this is the recommended pattern for queue-table style
+        consumers. On SQLite, ``with_for_update`` is silently ignored: that
+        is acceptable in tests because there is exactly one writer.
         """
         stmt = (
-            update(Workflow)
+            select(Workflow)
             .where(
                 Workflow.id == workflow_id,
                 Workflow.status.in_([WorkflowStatus.PENDING, WorkflowStatus.RETRYING]),
             )
-            .values(status=WorkflowStatus.RUNNING)
-            .execution_options(synchronize_session=False)
+            .with_for_update(skip_locked=True)
         )
-        result = db.execute(stmt)
-        db.commit()
-        if result.rowcount == 0:
+        workflow = db.execute(stmt).scalar_one_or_none()
+        if workflow is None:
+            # Either missing, locked elsewhere, or in a non-claimable state.
+            # Roll back the implicit transaction the SELECT may have started
+            # so we don't leak an idle-in-transaction connection.
+            db.rollback()
             return None
-        return db.get(Workflow, workflow_id)
+
+        workflow.status = WorkflowStatus.RUNNING
+        db.commit()  # releases the row-level lock
+        return workflow
 
 
 workflow = CRUDWorkflow(Workflow)

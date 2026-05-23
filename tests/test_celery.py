@@ -8,10 +8,13 @@ from tests.factories import WorkflowFactory
 
 
 class _NoCloseSession:
-    """Wrap a session so that the worker's ``db.close()`` is a no-op.
+    """Wrap a session so worker-side ``close()`` is a no-op.
 
-    The transactional test fixture owns the session lifecycle; the worker
-    must not close it out from under the test runner.
+    The transactional test fixture owns the session lifecycle, but the
+    production worker uses ``with SessionLocal() as db:`` which would call
+    ``close()`` and detach our test session. We proxy every attribute and
+    intercept ``close``. We also implement the context-manager protocol so
+    the wrapper itself can be used inside ``with``.
     """
 
     def __init__(self, inner):
@@ -20,12 +23,25 @@ class _NoCloseSession:
     def __getattr__(self, name):
         return getattr(self._inner, name)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
     def close(self) -> None:  # noqa: D401 - intentional no-op
         pass
 
 
 def _factory(db_session):
-    return lambda: _NoCloseSession(db_session)
+    """Return a callable that yields the same wrapped session every time.
+
+    The worker may open multiple sessions (claim / persist phases). We give
+    them all the same underlying session because tests run in a single
+    transaction.
+    """
+    wrapper = _NoCloseSession(db_session)
+    return lambda: wrapper
 
 
 def test_execution_success_path(client, operator_headers, db_session):
@@ -73,8 +89,8 @@ def test_execution_skipped_when_already_terminal(client, operator_headers, db_se
     assert "workflow_skipped_duplicate" in events
 
 
-def test_execution_unknown_workflow():
-    result = run_workflow_execution(workflow_id=999_999)
+def test_execution_unknown_workflow(db_session):
+    result = run_workflow_execution(workflow_id=999_999, session_factory=_factory(db_session))
     assert result == {"error": "workflow_not_found", "workflow_id": 999_999}
 
 
