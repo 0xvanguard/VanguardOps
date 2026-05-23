@@ -32,6 +32,8 @@ x-app-env: &app-env
   DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-vanguard}:${POSTGRES_PASSWORD:-vanguard}@db:5432/${POSTGRES_DB:-vanguardops}
   CELERY_BROKER_URL: redis://redis:6379/0
   CELERY_RESULT_BACKEND: redis://redis:6379/1
+  REDIS_BLACKLIST_URL: redis://redis:6379/2
+  JWT_BLACKLIST_ON_REDIS_FAILURE: ${JWT_BLACKLIST_ON_REDIS_FAILURE:-closed}
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
   BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@vanguardops.local}
   BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!2024}

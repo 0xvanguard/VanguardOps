@@ -51,6 +51,8 @@ from app.api.deps import get_db  # noqa: E402
 from app.core.security import Role, create_access_token  # noqa: E402
 from app.database import Base  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.services.token_blacklist import TokenBlacklist, set_blacklist  # noqa: E402
+from tests._fakes import FakeRedis  # noqa: E402
 from tests.factories import (  # noqa: E402
     AssetFactory,
     TicketFactory,
@@ -129,6 +131,27 @@ def db_session() -> Generator[Session, None, None]:
         if transaction.is_active:
             transaction.rollback()
         connection.close()
+
+
+# ---------------------------------------------------------------------------
+# JWT blacklist (FakeRedis injected per test)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def fake_blacklist() -> Generator[FakeRedis, None, None]:
+    """Replace the process-wide blacklist with an in-memory fake.
+
+    Yielding the underlying ``FakeRedis`` lets a test toggle
+    ``fail_calls = True`` to exercise the fail-closed / fail-open paths.
+    Cleared after every test so revocations from one test do not leak.
+    """
+    fake = FakeRedis()
+    set_blacklist(TokenBlacklist(fake, fallback="closed"))
+    try:
+        yield fake
+    finally:
+        set_blacklist(None)
 
 
 # ---------------------------------------------------------------------------
