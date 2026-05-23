@@ -1,16 +1,27 @@
 # =====================================================================
 # VanguardOps - Local & demo orchestration
 #
-# Profiles:
-#   default        : api + worker + db + redis (production-shaped)
+# Networking model
+# ----------------
+# By default, ONLY the API is reachable from the host (port 8000). The
+# database (PostgreSQL) and broker (Redis) are accessible *only* on the
+# internal compose network, so a host-level port scan reveals no datastore.
+# Use the `dev-tools` profile to expose 5432/6379 for local debugging.
+#
+# Profiles
+# --------
+#   default        : api + worker + db + redis (db/redis private)
 #   dev            : same + uvicorn --reload + bind-mounted source
+#   dev-tools      : exposes db (5432) and redis (6379) to the host
 #   monitoring     : adds Flower (Celery monitor)
 #   admin          : adds pgAdmin
 #
-# Usage:
-#   docker compose up -d                                # default profile
-#   docker compose --profile monitoring up -d           # + Flower
-#   docker compose --profile dev up                     # hot-reload
+# Usage
+# -----
+#   docker compose up -d                                  # default
+#   docker compose --profile dev-tools up -d              # + expose db/redis
+#   docker compose --profile monitoring up -d             # + Flower
+#   docker compose --profile dev up                       # hot-reload API
 # =====================================================================
 
 x-app-env: &app-env
@@ -26,6 +37,12 @@ x-app-env: &app-env
   BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!2024}
 
 services:
+  # -----------------------------------------------------------------------
+  # Datastores
+  # No `ports:` mapping by default - reachable only from other services on
+  # the compose network. See `db-expose` / `redis-expose` services below
+  # for opt-in host exposure under the `dev-tools` profile.
+  # -----------------------------------------------------------------------
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -36,12 +53,17 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vanguard} -d ${POSTGRES_DB:-vanguardops}"]
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vanguard} -d ${POSTGRES_DB:-vanguardops}"]
       interval: 5s
       timeout: 3s
       retries: 10
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    networks: [internal]
+    # Drop unneeded Linux capabilities. Postgres needs CHOWN/DAC_OVERRIDE/
+    # FOWNER/SETGID/SETUID for its initdb step.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
 
   redis:
     image: redis:7-alpine
@@ -54,9 +76,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    networks: [internal]
+    cap_drop: [ALL]
+    cap_add: [SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+    user: "999:999" # redis user inside the official image
 
+  # -----------------------------------------------------------------------
+  # Application
+  # -----------------------------------------------------------------------
   api:
     build:
       context: .
@@ -66,12 +94,18 @@ services:
     environment:
       <<: *app-env
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "${API_PORT:-8000}:8000" # ONLY the API is exposed to the host
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks: [internal]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-2}"
@@ -91,14 +125,59 @@ services:
         condition: service_healthy
       api:
         condition: service_started
-    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    networks: [internal]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command:
+      [
+        "celery",
+        "-A",
+        "app.workers.celery_app",
+        "worker",
+        "--loglevel=info",
+        "--concurrency=2",
+      ]
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]
+      test:
+        ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # ---- Hot-reload dev API (use --profile dev) ----
+  # -----------------------------------------------------------------------
+  # Optional: dev-tools profile exposes db / redis to the host so you can
+  # connect with psql, redis-cli, DataGrip, etc. NEVER enable in production.
+  # -----------------------------------------------------------------------
+  db-expose:
+    profiles: ["dev-tools"]
+    image: alpine/socat:1.8.0.0
+    command:
+      ["TCP-LISTEN:5432,fork,reuseaddr", "TCP:db:5432"]
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  redis-expose:
+    profiles: ["dev-tools"]
+    image: alpine/socat:1.8.0.0
+    command:
+      ["TCP-LISTEN:6379,fork,reuseaddr", "TCP:redis:6379"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [internal]
+
+  # -----------------------------------------------------------------------
+  # Hot-reload dev API (use --profile dev)
+  # -----------------------------------------------------------------------
   api-dev:
     profiles: ["dev"]
     build:
@@ -120,9 +199,13 @@ services:
       - ./app:/app/app
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    networks: [internal]
+    command:
+      ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
-  # ---- Flower: Celery monitor (use --profile monitoring) ----
+  # -----------------------------------------------------------------------
+  # Flower: Celery monitor (use --profile monitoring)
+  # -----------------------------------------------------------------------
   flower:
     profiles: ["monitoring"]
     image: mher/flower:2.0
@@ -136,8 +219,11 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    networks: [internal]
 
-  # ---- pgAdmin: optional DB explorer (use --profile admin) ----
+  # -----------------------------------------------------------------------
+  # pgAdmin: optional DB explorer (use --profile admin)
+  # -----------------------------------------------------------------------
   pgadmin:
     profiles: ["admin"]
     image: dpage/pgadmin4:8
@@ -150,6 +236,11 @@ services:
       - "${PGADMIN_PORT:-5050}:80"
     depends_on:
       - db
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
 
 volumes:
   postgres_data:
