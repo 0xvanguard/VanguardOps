@@ -1,62 +1,89 @@
-version: '3.8'
+# =====================================================================
+# VanguardOps - Local & demo orchestration
+#
+# Profiles:
+#   default        : api + worker + db + redis (production-shaped)
+#   dev            : same + uvicorn --reload + bind-mounted source
+#   monitoring     : adds Flower (Celery monitor)
+#   admin          : adds pgAdmin
+#
+# Usage:
+#   docker compose up -d                                # default profile
+#   docker compose --profile monitoring up -d           # + Flower
+#   docker compose --profile dev up                     # hot-reload
+# =====================================================================
+
+x-app-env: &app-env
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env}
+  DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-vanguard}:${POSTGRES_PASSWORD:-vanguard}@db:5432/${POSTGRES_DB:-vanguardops}
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8000}
+  BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@vanguardops.local}
+  BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-ChangeMe!2024}
 
 services:
   db:
-    image: postgres:15-alpine
-    container_name: vanguard-db
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: vanguardops
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-vanguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vanguard}
+      POSTGRES_DB: ${POSTGRES_DB:-vanguardops}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d vanguardops"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vanguard} -d ${POSTGRES_DB:-vanguardops}"]
       interval: 5s
-      timeout: 5s
-      retries: 5
+      timeout: 3s
+      retries: 10
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
 
   redis:
     image: redis:7-alpine
-    container_name: vanguard-redis
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
 
   api:
-    build: .
-    container_name: vanguard-api
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    volumes:
-      - .:/app
-    ports:
-      - "8000:8000"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vanguardops-api:${TAG:-local}
+    restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/vanguardops
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      <<: *app-env
+    ports:
+      - "${API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${API_WORKERS:-2}"
 
   worker:
-    build: .
-    container_name: vanguard-worker
-    command: celery -A app.workers.celery_app worker --loglevel=info
-    volumes:
-      - .:/app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vanguardops-api:${TAG:-local}
+    restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/vanguardops
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      <<: *app-env
     depends_on:
       db:
         condition: service_healthy
@@ -64,6 +91,66 @@ services:
         condition: service_healthy
       api:
         condition: service_started
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ---- Hot-reload dev API (use --profile dev) ----
+  api-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vanguardops-api:${TAG:-local}
+    environment:
+      <<: *app-env
+      ENVIRONMENT: development
+      LOG_FORMAT: console
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # ---- Flower: Celery monitor (use --profile monitoring) ----
+  flower:
+    profiles: ["monitoring"]
+    image: mher/flower:2.0
+    restart: unless-stopped
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      FLOWER_PORT: "5555"
+      FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:-admin:ChangeMe!2024}
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ---- pgAdmin: optional DB explorer (use --profile admin) ----
+  pgadmin:
+    profiles: ["admin"]
+    image: dpage/pgadmin4:8
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@vanguardops.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-ChangeMe!2024}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    depends_on:
+      - db
 
 volumes:
   postgres_data:
+  redis_data:
