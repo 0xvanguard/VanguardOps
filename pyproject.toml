@@ -1,0 +1,78 @@
+[project]
+name = "vanguardops"
+version = "2.0.0"
+description = "IT support automation platform: assets, ticket triage, async workflows."
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "VanguardOps" }]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["alembic/versions", ".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "PT",   # flake8-pytest-style
+    "RET",  # flake8-return
+    "ARG",  # flake8-unused-arguments
+    "PIE",  # flake8-pie
+    "S",    # bandit security
+    "N",    # pep8-naming
+]
+ignore = [
+    "E501",   # line too long - we trust formatter
+    "B008",   # FastAPI Depends(...) in defaults is idiomatic
+    "S101",   # asserts allowed in tests
+    "S104",   # 0.0.0.0 binding (intentional for containers)
+    "ARG001", # unused arguments accepted in FastAPI handlers (e.g. Depends-only)
+    "ARG002",
+    "RET504", # explicit return is sometimes clearer
+    "N805",   # `cls` in pydantic validators
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "ARG", "PT011", "N802"]
+"alembic/env.py" = ["E402"]
+# JWT type literals are not secrets - bandit false positives.
+"app/core/security.py" = ["S105", "S106"]
+"app/core/config.py" = ["S105", "S106"]
+"app/schemas/auth.py" = ["S105"]
+"app/services/ticket_service.py" = ["SIM102"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning:passlib.*",
+    "ignore::DeprecationWarning:celery.*",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = ["app/static/*", "alembic/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 75
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
