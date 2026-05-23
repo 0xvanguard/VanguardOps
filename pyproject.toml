@@ -41,6 +41,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S", "ARG", "PT011", "N802"]
+"tests/integration/*" = ["S", "ARG", "PT011", "N802", "PLR2004"]
 "alembic/env.py" = ["E402"]
 # JWT type literals are not secrets - bandit false positives.
 "app/core/security.py" = ["S105", "S106"]
@@ -53,9 +54,14 @@ known-first-party = ["app", "tests"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra --strict-markers --strict-config"
+# By default exclude the integration tests so the fast suite stays fast.
+# Run them explicitly with `pytest -m integration` or `make test-integration`.
+addopts = "-ra --strict-markers --strict-config -m 'not integration'"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: tests that require a Docker daemon (Testcontainers).",
+]
 filterwarnings = [
     "ignore::DeprecationWarning:passlib.*",
     "ignore::DeprecationWarning:celery.*",
