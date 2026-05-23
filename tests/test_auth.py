@@ -136,3 +136,74 @@ def test_register_duplicate_email_returns_409(client, admin_headers, db_session)
     )
     assert response.status_code == 409
     assert response.json()["code"] == "user_already_exists"
+
+
+# ---------------------------------------------------------------------------
+# Logout
+# ---------------------------------------------------------------------------
+
+
+def test_logout_revokes_access_token(client, operator_headers):
+    # Sanity: token works.
+    assert client.get("/api/v1/auth/me", headers=operator_headers).status_code == 200
+
+    # Logout.
+    response = client.post("/api/v1/auth/logout", headers=operator_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "logged_out"
+    assert len(body["revoked_jtis"]) == 1
+    revoked_jti = body["revoked_jtis"][0]
+    assert revoked_jti  # non-empty
+
+    # Same token now rejected.
+    blocked = client.get("/api/v1/auth/me", headers=operator_headers)
+    assert blocked.status_code == 401
+    assert blocked.json()["code"] == "invalid_credentials"
+    assert "revoked" in blocked.json()["detail"].lower()
+
+
+def test_logout_also_revokes_refresh_token_when_provided(
+    client, operator_headers, operator_user, db_session
+):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": operator_user.email, "password": "Test!2345"},
+    ).json()
+    refresh_token = login["refresh_token"]
+
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers=operator_headers,
+        json={"refresh_token": refresh_token},
+    )
+    assert response.status_code == 200
+    assert len(response.json()["revoked_jtis"]) == 2
+
+    # Refresh attempt with the revoked refresh token must 401.
+    refresh_attempt = client.post(
+        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
+    )
+    assert refresh_attempt.status_code == 401
+
+
+def test_logout_refuses_refresh_token_belonging_to_another_user(
+    client, operator_headers, db_session
+):
+    # Forge a refresh token for a different user id.
+    from app.core.security import Role, create_refresh_token
+
+    foreign_refresh = create_refresh_token(subject=999_999, role=Role.OPERATOR)
+
+    response = client.post(
+        "/api/v1/auth/logout",
+        headers=operator_headers,
+        json={"refresh_token": foreign_refresh},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_credentials"
+
+
+def test_logout_requires_authentication(client):
+    response = client.post("/api/v1/auth/logout")
+    assert response.status_code == 401
