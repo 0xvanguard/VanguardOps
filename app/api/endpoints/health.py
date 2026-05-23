@@ -53,18 +53,26 @@ def readyz(db: DbSession) -> ReadinessStatus:
         checks["database"] = f"error: {exc.__class__.__name__}"
         overall = "not_ready"
 
-    # Redis (best effort: only check when not in test mode)
     settings = get_settings()
-    if not settings.is_test:
-        try:
-            from redis import Redis
 
-            client = Redis.from_url(settings.CELERY_BROKER_URL, socket_connect_timeout=1)
-            client.ping()
-            checks["redis"] = "ok"
-        except Exception as exc:  # pragma: no cover - integration concern
-            checks["redis"] = f"error: {exc.__class__.__name__}"
-            overall = "not_ready"
+    # Redis (broker + blacklist) only matters outside the test environment.
+    if not settings.is_test:
+        from redis import Redis
+
+        for label, url in (
+            ("redis_broker", settings.CELERY_BROKER_URL),
+            ("redis_blacklist", settings.REDIS_BLACKLIST_URL),
+        ):
+            try:
+                client = Redis.from_url(url, socket_connect_timeout=1)
+                client.ping()
+                checks[label] = "ok"
+            except Exception as exc:  # pragma: no cover - integration concern
+                checks[label] = f"error: {exc.__class__.__name__}"
+                # The blacklist Redis is on the critical path of every
+                # authenticated request (ADR-007 fail-closed). If it is
+                # down, take the pod out of the LB by reporting unready.
+                overall = "not_ready"
 
     return ReadinessStatus(status=overall, checks=checks)
 
