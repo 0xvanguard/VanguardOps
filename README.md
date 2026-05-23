@@ -255,17 +255,50 @@ Códigos estables (`code`) para que clientes ramifiquen sin parsear strings:
 
 ---
 
-## 🛡️ Hardening
+## 🛡️ Hardening de producción
 
-* Imagen Docker **multi-stage** sin compiladores en runtime, usuario no-root (`vanguard:1001`), `tini` como PID 1.
-* Healthcheck integrado (`/livez`).
-* Headers de seguridad: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`.
+VanguardOps incorpora desde el primer día las defensas que un equipo senior espera ver:
+
+### Aislamiento de red (Docker Compose)
+
+Solo la API se expone al host (`8000:8000`). PostgreSQL y Redis viven en una red interna `internal` y **nunca** mapean puertos al host por defecto. Si un dev necesita conectarse desde `psql` o `redis-cli`, activa el perfil opt-in:
+
+```bash
+docker compose --profile dev-tools up -d   # expone 5432/6379 SOLO en local
+```
+
+Cada contenedor de aplicación corre con `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]` y `tmpfs: /tmp`.
+
+### Imagen Docker (multi-stage + tini + no-root)
+
+* Multi-stage: el stage `builder` instala dependencias en `/opt/venv`; el stage `runtime` solo arrastra `libpq5`, `curl` y `tini`. Cero compiladores en runtime.
+* Usuario no-root `vanguard:1001`.
+* `tini` como PID 1 reenvía `SIGTERM` correctamente a uvicorn y Celery → cierres limpios sin transacciones a medias.
+* `HEALTHCHECK` integrado contra `/livez`.
+
+### Secretos y autenticación
+
+* `SECRET_KEY` validado en `Settings`: si `ENVIRONMENT=production` y se usa el placeholder de desarrollo, la app **no arranca**.
+* Token estático eliminado: el legacy `X-Admin-Token: super-secret-admin-token` ya no autentica nada (test de regresión: `tests/test_security_hardening.py::test_legacy_admin_token_header_is_not_accepted`).
+* JWT con `passlib[bcrypt]` para passwords, `exp`, `iat`, `iss`, `jti` único por emisión y verificación de `type` (access vs refresh).
+* `OAuth2PasswordBearer` apunta al endpoint form-encoded (`/auth/login/oauth`), por lo que el botón **Authorize** de Swagger funciona nativamente.
+
+### Concurrencia y conexiones
+
+* El worker reclama trabajo con `SELECT … FOR UPDATE SKIP LOCKED` (ver [ADR-005](docs/adr/005-celery-claim-atomico.md)). Múltiples workers pueden ejecutarse en paralelo sin doble ejecución del mismo workflow.
+* Cada tarea Celery se envuelve en `with SessionLocal() as db:` para garantizar el `Session.close()` incluso si el worker es matado mientras procesa.
+* `pool_pre_ping=True` y `pool_recycle=1800` en SQLAlchemy → resistencia a desconexiones silenciosas de PostgreSQL.
+
+### Schema y migraciones
+
+* `Base.metadata.create_all(...)` **no se llama jamás en el arranque de la app** (ver [ADR-004](docs/adr/004-alembic-migraciones.md)). Producción ejecuta `alembic upgrade head` antes de levantar uvicorn (`docker-compose.yml` lo hace explícitamente).
+* Naming convention determinista en `MetaData` para que `alembic revision --autogenerate` produzca diffs limpios y portables.
+
+### Headers, CORS, rate limit
+
+* Headers de seguridad globales: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`.
 * CORS configurable por env (`CORS_ORIGINS`).
 * Rate limiting con `slowapi` (configurable por env).
-* `SECRET_KEY` validado con mínimo 32 caracteres y obligatorio en producción.
-* Passwords con bcrypt (12 rounds por defecto).
-* Tokens con `jti` único por emisión + verificación de `exp` y `type` (access vs refresh).
-* `pool_pre_ping=True` y `pool_recycle=1800` en SQLAlchemy contra desconexiones silenciosas de PostgreSQL.
 
 ---
 

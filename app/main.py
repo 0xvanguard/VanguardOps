@@ -28,7 +28,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from app.api.endpoints.health import router as health_router
 from app.api.router import api_router
-from app.bootstrap import bootstrap_admin, ensure_schema
+from app.bootstrap import bootstrap_admin
 from app.core.config import get_settings
 from app.core.error_handlers import register_error_handlers
 from app.core.logging import configure_logging, get_logger
@@ -53,16 +53,16 @@ limiter = Limiter(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Run startup hooks (logging, schema, bootstrap admin)."""
+    """Run startup hooks (logging, bootstrap admin).
+
+    Schema management is **never** performed at API startup. Production and
+    development environments must run ``alembic upgrade head`` separately
+    (the docker-compose API service does it before launching uvicorn). The
+    test suite owns its own schema setup in ``tests/conftest.py``.
+    """
     configure_logging()
     settings = get_settings()
     logger = get_logger(__name__)
-
-    # In development / test we create tables eagerly so the API is usable
-    # without running Alembic. Production runs migrations as a separate
-    # step (`alembic upgrade head`).
-    if settings.ENVIRONMENT in ("development", "test"):
-        ensure_schema()
 
     if not settings.is_test:
         try:

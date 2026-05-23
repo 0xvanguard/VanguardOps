@@ -1,8 +1,9 @@
-"""Startup hooks: bootstrap admin user, ensure DB schema in dev/test.
+"""Idempotent startup hook: create the bootstrap admin user.
 
-Production deployments use Alembic migrations; the ``ensure_schema`` helper
-is only used for the test database so we don't need to run Alembic from
-``conftest.py``.
+Schema management is intentionally **not** part of this module. Production
+runs ``alembic upgrade head`` as a separate deployment step (see
+``docker-compose.yml``); tests build the schema directly in
+``tests/conftest.py`` to avoid coupling the test suite to Alembic.
 """
 
 from __future__ import annotations
@@ -13,21 +14,19 @@ from app import crud
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.security import Role
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal
 from app.schemas.auth import UserCreate
 
 logger = get_logger(__name__)
 
 
-def ensure_schema() -> None:
-    """Create tables if they don't exist. Used in dev/test only."""
-    Base.metadata.create_all(bind=engine)
-
-
 def bootstrap_admin(db: Session | None = None) -> None:
-    """Idempotently create the bootstrap admin user when no users exist.
+    """Create the bootstrap admin user the first time the app boots.
 
-    Safe to call on every startup: does nothing once users are present.
+    Safe to call on every startup: returns immediately once at least one
+    user already exists. Wrapped in a context manager so the session is
+    closed even if the create call raises (e.g. duplicate email under a
+    parallel start).
     """
     settings = get_settings()
     own_session = db is None

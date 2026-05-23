@@ -11,8 +11,9 @@ Formato basado en el [template de Michael Nygard](https://cognitect.com/blog/201
 | [001](001-arquitectura-en-capas.md) | Aceptado | Arquitectura en capas (api/services/crud/models) |
 | [002](002-errores-rfc-7807.md) | Aceptado | Errores HTTP en formato RFC 7807 |
 | [003](003-autenticacion-jwt.md) | Aceptado | Autenticación basada en JWT con roles |
-| [004](004-alembic-migraciones.md) | Aceptado | Migraciones gestionadas con Alembic |
-| [005](005-celery-claim-atomico.md) | Aceptado | Claim atómico para evitar ejecución doble de workflows |
+| [004](004-alembic-migraciones.md) | Aceptado | Migraciones gestionadas con Alembic (sin `create_all` en runtime) |
+| [005](005-celery-claim-atomico.md) | Aceptado | Bloqueo pesimista (`FOR UPDATE SKIP LOCKED`) para workflows |
+| [006](006-docker-hardening-y-aislamiento.md) | Aceptado | Hardening Docker y aislamiento de red en Compose |
 
 ## Cómo añadir un ADR
 
