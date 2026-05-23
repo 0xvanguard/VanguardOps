@@ -32,6 +32,7 @@ from app.core.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from app.core.middleware_security import SecurityRateLimitMiddleware
 from app.core.observability import PrometheusMiddleware
 from app.schemas.common import ProblemDetails
 
@@ -94,9 +95,14 @@ def create_app() -> FastAPI:
     )
 
     # --- Middlewares (order matters: outermost added last) ---
+    # Innermost (closest to the app) at the top, outermost at the bottom.
     app.add_middleware(GZipMiddleware, minimum_size=1024)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(PrometheusMiddleware)
+    # SecurityRateLimit sits inside RequestContext so it can log with
+    # ``request_id`` already bound, but outside Prometheus / SecurityHeaders
+    # so a 429 short-circuit does not pollute latency histograms.
+    app.add_middleware(SecurityRateLimitMiddleware)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CORSMiddleware,

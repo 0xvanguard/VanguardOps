@@ -101,7 +101,9 @@ class TestIsolation:
         for _ in range(3):
             rl.check(scope="login", identifier="ip", limit=3, window_seconds=60)
         assert rl.check(scope="login", identifier="ip", limit=3, window_seconds=60).allowed is False
-        assert rl.check(scope="register", identifier="ip", limit=3, window_seconds=60).allowed is True
+        assert (
+            rl.check(scope="register", identifier="ip", limit=3, window_seconds=60).allowed is True
+        )
 
 
 class TestStorageContract:

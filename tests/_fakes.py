@@ -165,9 +165,7 @@ class FakeRedis:
         zset = self._zsets.get(key)
         if not zset:
             return 0
-        to_remove = [
-            m for m, s in zset.items() if min_score <= s <= max_score
-        ]
+        to_remove = [m for m, s in zset.items() if min_score <= s <= max_score]
         for m in to_remove:
             del zset[m]
         return len(to_remove)
@@ -189,10 +187,7 @@ class FakeRedis:
         zset = self._zsets.get(key, {})
         ordered = sorted(zset.items(), key=lambda kv: (kv[1], kv[0]))
         # Redis-style: stop is inclusive; -1 means last element.
-        if stop == -1:
-            sliced = ordered[start:]
-        else:
-            sliced = ordered[start : stop + 1]
+        sliced = ordered[start:] if stop == -1 else ordered[start : stop + 1]
         if withscores:
             return [(m, s) for m, s in sliced]
         return [m for m, _ in sliced]

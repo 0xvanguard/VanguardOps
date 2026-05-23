@@ -121,7 +121,8 @@ class TestEscalation:
         last = None
         for _ in range(2):
             last = bl.track_auth_failure(ip)
-        assert last is not None and last.banned
+        assert last is not None
+        assert last.banned
         return last
 
 
