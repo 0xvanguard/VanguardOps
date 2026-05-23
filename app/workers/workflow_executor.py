@@ -1,40 +1,61 @@
-import time
-from typing import Dict, Any
+"""Pure workflow execution stubs (no I/O, no DB, no Celery)."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+
 
 class WorkflowExecutor:
-    """Ejecutor de workflows desacoplado de Celery."""
-    
+    """Registry of executable workflows keyed by ``name``.
+
+    In a real deployment these would shell out to remote runners or call
+    vendor APIs. For demo purposes they return deterministic payloads so
+    the rest of the system can be exercised end-to-end.
+    """
+
     @staticmethod
-    def execute_wf_auto_reset(config: Dict[str, Any]) -> Dict[str, Any]:
-        """Simula reset de password"""
-        time.sleep(2)
+    def execute_wf_auto_reset(_config: dict[str, Any]) -> dict[str, Any]:
         return {
-            "status": "success", 
-            "action": "password_reset", 
-            "details": "Contraseña temporal enviada al usuario o manager seguro."
+            "status": "success",
+            "action": "password_reset",
+            "details": "Temporary password issued via secure channel.",
         }
 
     @staticmethod
-    def execute_wf_connectivity_triage(config: Dict[str, Any]) -> Dict[str, Any]:
-        """Simula un traceroute/ping a un endpoint"""
-        time.sleep(3)
+    def execute_wf_connectivity_triage(_config: dict[str, Any]) -> dict[str, Any]:
         return {
-            "status": "success", 
-            "action": "connectivity_check", 
-            "packet_loss": "0%", 
+            "status": "success",
+            "action": "connectivity_check",
+            "packet_loss_pct": 0,
             "latency_ms": 12,
-            "route_hops": 4
+            "route_hops": 4,
         }
-        
+
+    @staticmethod
+    def execute_wf_system_diag(_config: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "status": "success",
+            "action": "system_diagnostics",
+            "cpu_usage_pct": 14,
+            "disk_free_gb": 200,
+        }
+
+    _REGISTRY: dict[str, Callable[[dict[str, Any]], dict[str, Any]]]
+
     @classmethod
-    def run_workflow(cls, name: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        if name == "wf_auto_reset":
-            return cls.execute_wf_auto_reset(config)
-        elif name in ["wf_connectivity_triage", "wf_ping_trace"]:
-            return cls.execute_wf_connectivity_triage(config)
-        elif name == "wf_system_diag":
-            # Simular diagnóstico general
-            time.sleep(1)
-            return {"status": "success", "cpu_usage": "14%", "disk_free": "200GB"}
-        else:
-            raise ValueError(f"Workflow desconocido: {name}")
+    def run_workflow(cls, name: str, config: dict[str, Any]) -> dict[str, Any]:
+        registry = cls._registry()
+        impl = registry.get(name)
+        if impl is None:
+            raise ValueError(f"Unknown workflow: {name!r}")
+        return impl(config)
+
+    @classmethod
+    def _registry(cls) -> dict[str, Callable[[dict[str, Any]], dict[str, Any]]]:
+        return {
+            "wf_auto_reset": cls.execute_wf_auto_reset,
+            "wf_connectivity_triage": cls.execute_wf_connectivity_triage,
+            "wf_ping_trace": cls.execute_wf_connectivity_triage,
+            "wf_system_diag": cls.execute_wf_system_diag,
+        }

@@ -1,40 +1,219 @@
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+"""Shared test fixtures.
 
-from app.main import app
-from app.database import Base
-from app.api.deps import get_db
+Architecture
+------------
+* A single SQLite engine is built once per *session* and the schema is
+  created on first use.
+* For every test, we open a fresh connection, start a transaction, bind a
+  scoped session to it, and roll back on teardown. Tests never see each
+  other's data, so order-independence is guaranteed.
+* The FastAPI ``get_db`` dependency is overridden to yield the
+  per-test session, so endpoints, services and CRUD all hit the same
+  in-memory state and respect the rollback.
+* Auth fixtures issue real JWT tokens from real DB users (admin /
+  operator / viewer), exercising the full RBAC path on every request.
+"""
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+from __future__ import annotations
+
+# Configure environment BEFORE importing the application so settings pick
+# up the test values (the ``Settings`` instance is cached at import-time).
+import os
+import pathlib
+import sys
+
+os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault("LOG_LEVEL", "WARNING")
+os.environ.setdefault("LOG_FORMAT", "console")
+os.environ.setdefault(
+    "SECRET_KEY",
+    "test-secret-key-must-be-at-least-thirty-two-characters-long",
+)
+os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
+os.environ.setdefault("CELERY_BROKER_URL", "memory://")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
+os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+
+# Ensure the repo root is importable when running ``pytest`` from any cwd.
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from collections.abc import Generator  # noqa: E402
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
+
+from app.api.deps import get_db  # noqa: E402
+from app.core.security import Role, create_access_token  # noqa: E402
+from app.database import Base  # noqa: E402
+from app.main import create_app  # noqa: E402
+from tests.factories import (  # noqa: E402
+    AssetFactory,
+    TicketFactory,
+    UserFactory,
+    WorkflowFactory,
+    register_session,
+)
+
+# ---------------------------------------------------------------------------
+# Engine & schema (session scope)
+# ---------------------------------------------------------------------------
+
+TEST_DB_URL = "sqlite:///:memory:"
+
+# StaticPool keeps a single shared in-memory database across connections,
+# which is required for the rollback-per-test pattern to see the same data.
+from sqlalchemy.pool import StaticPool  # noqa: E402
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    TEST_DB_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+    future=True,
 )
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def override_get_db():
-    try:
-        db = TestingSessionLocal()
-        yield db
-    finally:
-        db.close()
 
-app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture(scope="session", autouse=True)
+def _create_schema() -> Generator[None, None, None]:
+    """Create all tables once per test session."""
+    # Import models so all tables are registered on the metadata.
+    import app.models  # noqa: F401
 
-@pytest.fixture(scope="session")
-def db_engine():
-    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
-    yield engine
+    yield
     Base.metadata.drop_all(bind=engine)
 
-@pytest.fixture(scope="module")
-def client(db_engine):
+
+# ---------------------------------------------------------------------------
+# Per-test session with transactional rollback
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def db_session() -> Generator[Session, None, None]:
+    """Yield a SQLAlchemy session whose changes are rolled back at teardown.
+
+    The pattern uses a single connection, a top-level transaction, and a
+    SAVEPOINT-based nested transaction that we restart on every commit
+    inside the test - this lets the application code call ``db.commit()``
+    naturally while still discarding everything when the test ends.
+    """
+    connection = engine.connect()
+    transaction = connection.begin()
+    test_session_factory = sessionmaker(bind=connection, autoflush=False, future=True)
+    session = test_session_factory()
+
+    # Mirror production: when the app calls ``commit``, restart the
+    # SAVEPOINT so subsequent statements stay inside the outer transaction.
+    nested = connection.begin_nested()
+
+    from sqlalchemy import event
+
+    @event.listens_for(session, "after_transaction_end")
+    def _restart_savepoint(sess, trans):  # pragma: no cover - SQLA hook
+        nonlocal nested
+        if trans.nested and not trans._parent.nested:
+            nested = connection.begin_nested()
+
+    # Make factories use this session by default.
+    register_session(session)
+
+    try:
+        yield session
+    finally:
+        session.close()
+        if transaction.is_active:
+            transaction.rollback()
+        connection.close()
+
+
+# ---------------------------------------------------------------------------
+# FastAPI TestClient with overridden DB dependency
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def client(db_session: Session) -> Generator[TestClient, None, None]:
+    """Yield a TestClient that uses the per-test rolled-back session."""
+    app = create_app()
+
+    def _override_get_db() -> Generator[Session, None, None]:
+        try:
+            yield db_session
+        finally:
+            # Don't close - the outer fixture owns the lifecycle.
+            pass
+
+    app.dependency_overrides[get_db] = _override_get_db
+
     with TestClient(app) as c:
         yield c
 
-@pytest.fixture(scope="module")
-def admin_headers():
-    return {"X-Admin-Token": "super-secret-admin-token"}
+    app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# Users + JWT helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_token(user_id: int, role: Role) -> str:
+    return create_access_token(subject=user_id, role=role)
+
+
+@pytest.fixture
+def admin_user(db_session: Session):
+    return UserFactory(role=Role.ADMIN)
+
+
+@pytest.fixture
+def operator_user(db_session: Session):
+    return UserFactory(role=Role.OPERATOR)
+
+
+@pytest.fixture
+def viewer_user(db_session: Session):
+    return UserFactory(role=Role.VIEWER)
+
+
+@pytest.fixture
+def admin_token(admin_user) -> str:
+    return _make_token(admin_user.id, Role.ADMIN)
+
+
+@pytest.fixture
+def operator_token(operator_user) -> str:
+    return _make_token(operator_user.id, Role.OPERATOR)
+
+
+@pytest.fixture
+def viewer_token(viewer_user) -> str:
+    return _make_token(viewer_user.id, Role.VIEWER)
+
+
+@pytest.fixture
+def admin_headers(admin_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {admin_token}"}
+
+
+@pytest.fixture
+def operator_headers(operator_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {operator_token}"}
+
+
+@pytest.fixture
+def viewer_headers(viewer_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {viewer_token}"}
+
+
+# Re-export factories for convenience in tests.
+__all__ = [
+    "AssetFactory",
+    "TicketFactory",
+    "UserFactory",
+    "WorkflowFactory",
+]

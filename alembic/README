@@ -1,0 +1,5 @@
+Alembic migration scripts for VanguardOps.
+
+Run ``alembic upgrade head`` to bring a database up to date, and
+``alembic revision --autogenerate -m "<message>"`` to create new revisions
+from model changes.

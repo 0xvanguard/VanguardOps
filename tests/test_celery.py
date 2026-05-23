@@ -1,46 +1,105 @@
-from unittest.mock import patch
-from app.models.workflow import WorkflowStatus
-from app.workers.tasks import execute_workflow_task
-from app.workers.workflow_executor import WorkflowExecutor
-from app import crud
+"""Workflow execution tests (Celery task in eager mode + race conditions)."""
 
-def test_workflow_execution_success(db_engine, client, admin_headers):
-    # 1. Crear workflow pendiente vía API o simulación
-    res = client.post("/api/v1/workflows/", json={"name": "wf_auto_reset", "trigger_type": "manual"}, headers=admin_headers)
-    assert res.status_code == 200
-    wf_id = res.json()["id"]
+from __future__ import annotations
 
-    # 2. Ejecutar la tarea de Celery sincrónicamente para probar la lógica
-    # Usamos execute_workflow_task llamándola directamente como función normal
-    result = execute_workflow_task(workflow_id=wf_id)
-    
-    # 3. Validar estado cambiado a SUCCESS y result
+from app.models.workflow import Workflow, WorkflowStatus
+from app.workers.tasks import run_workflow_execution
+from tests.factories import WorkflowFactory
+
+
+class _NoCloseSession:
+    """Wrap a session so worker-side ``close()`` is a no-op.
+
+    The transactional test fixture owns the session lifecycle, but the
+    production worker uses ``with SessionLocal() as db:`` which would call
+    ``close()`` and detach our test session. We proxy every attribute and
+    intercept ``close``. We also implement the context-manager protocol so
+    the wrapper itself can be used inside ``with``.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def close(self) -> None:  # noqa: D401 - intentional no-op
+        pass
+
+
+def _factory(db_session):
+    """Return a callable that yields the same wrapped session every time.
+
+    The worker may open multiple sessions (claim / persist phases). We give
+    them all the same underlying session because tests run in a single
+    transaction.
+    """
+    wrapper = _NoCloseSession(db_session)
+    return lambda: wrapper
+
+
+def test_execution_success_path(client, operator_headers, db_session):
+    workflow = WorkflowFactory(name="wf_auto_reset", status="PENDING")
+    workflow_id = workflow.id
+
+    result = run_workflow_execution(
+        workflow_id=workflow_id,
+        session_factory=_factory(db_session),
+    )
     assert result.get("status") == "success"
-    
-    wf_updated = client.get(f"/api/v1/workflows/{wf_id}").json()
-    assert wf_updated["status"] == "SUCCESS"
-    assert wf_updated["execution_logs"]["action"] == "password_reset"
-    
-    # 4. Validar auditoría
-    logs_res = client.get(f"/api/v1/activity-log/workflow/{wf_id}")
-    logs = logs_res.json()
-    event_types = [log["event_type"] for log in logs]
-    assert "workflow_started" in event_types
-    assert "workflow_succeeded" in event_types
+    assert result["action"] == "password_reset"
 
-def test_workflow_anti_duplication(db_engine, client, admin_headers):
-    res = client.post("/api/v1/workflows/", json={"name": "wf_connectivity_triage", "trigger_type": "manual"}, headers=admin_headers)
-    wf_id = res.json()["id"]
+    fresh = db_session.get(Workflow, workflow_id)
+    assert fresh is not None
+    assert fresh.status == WorkflowStatus.SUCCESS
 
-    # Ejecutar una vez
-    execute_workflow_task(workflow_id=wf_id)
-    
-    # Intentar ejecutar nuevamente
-    result = execute_workflow_task(workflow_id=wf_id)
-    
-    # Debe saltar por estado no válido (ya es SUCCESS)
+    log_response = client.get(
+        f"/api/v1/activity-log/workflow/{workflow_id}",
+        headers=operator_headers,
+    )
+    events = {entry["event_type"] for entry in log_response.json()}
+    assert "workflow_started" in events
+    assert "workflow_succeeded" in events
+
+
+def test_execution_skipped_when_already_terminal(client, operator_headers, db_session):
+    workflow = WorkflowFactory(name="wf_ping_trace", status="PENDING")
+    workflow_id = workflow.id
+
+    # First run: success.
+    run_workflow_execution(workflow_id=workflow_id, session_factory=_factory(db_session))
+    fresh = db_session.get(Workflow, workflow_id)
+    assert fresh.status == WorkflowStatus.SUCCESS
+
+    # Second run: must be skipped because the row is no longer claimable.
+    result = run_workflow_execution(workflow_id=workflow_id, session_factory=_factory(db_session))
     assert result.get("error") == "Skipped due to status"
-    
-    logs_res = client.get(f"/api/v1/activity-log/workflow/{wf_id}")
-    event_types = [log["event_type"] for log in logs_res.json()]
-    assert "workflow_skipped_duplicate" in event_types
+
+    log_response = client.get(
+        f"/api/v1/activity-log/workflow/{workflow_id}",
+        headers=operator_headers,
+    )
+    events = {entry["event_type"] for entry in log_response.json()}
+    assert "workflow_skipped_duplicate" in events
+
+
+def test_execution_unknown_workflow(db_session):
+    result = run_workflow_execution(workflow_id=999_999, session_factory=_factory(db_session))
+    assert result == {"error": "workflow_not_found", "workflow_id": 999_999}
+
+
+def test_executor_marks_failed_on_unknown_name(db_session):
+    workflow = WorkflowFactory(name="wf_does_not_exist", status="PENDING")
+    workflow_id = workflow.id
+
+    result = run_workflow_execution(workflow_id=workflow_id, session_factory=_factory(db_session))
+    assert "error" in result
+
+    fresh = db_session.get(Workflow, workflow_id)
+    assert fresh.status == WorkflowStatus.FAILED

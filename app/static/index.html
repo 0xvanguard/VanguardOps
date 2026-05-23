@@ -3,102 +3,414 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VanguardOps | Operational Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>VanguardOps · Operational Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <div class="brand">
-                <div class="logo">VO</div>
-                <h2>VanguardOps</h2>
+
+<!-- ============================== LOGIN ============================== -->
+<div class="auth-screen" id="auth-screen" hidden>
+    <div class="auth-card">
+        <div class="auth-brand">
+            <div class="logo">VO</div>
+            <div>
+                <h1>VanguardOps</h1>
+                <p>IT operations & automation console</p>
             </div>
-            <nav>
-                <a href="#" class="nav-item active" data-view="dashboard">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
-                    Dashboard
-                </a>
-                <a href="#" class="nav-item" data-view="tickets">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"></path></svg>
-                    Tickets
-                </a>
-                <a href="#" class="nav-item" data-view="workflows">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                    Workflows
-                </a>
-            </nav>
-        </aside>
-
-        <!-- Main Content -->
-        <main class="main-content">
-            <header class="topbar">
-                <div class="search-bar">
-                    <input type="text" placeholder="Search operational data...">
-                </div>
-                <div class="user-profile">
-                    <div class="status-indicator active"></div>
-                    <span>System Admin</span>
-                </div>
-            </header>
-
-            <div class="content-view" id="dashboard-view">
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <h3 class="stat-title">Active Tickets</h3>
-                        <div class="stat-value" id="stat-tickets">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3 class="stat-title">Critical SLA</h3>
-                        <div class="stat-value text-danger" id="stat-critical">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3 class="stat-title">Workflows Running</h3>
-                        <div class="stat-value text-info" id="stat-workflows">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <h3 class="stat-title">Audit Events</h3>
-                        <div class="stat-value text-success" id="stat-events">0</div>
-                    </div>
-                </div>
-
-                <div class="dashboard-grid">
-                    <div class="card">
-                        <div class="card-header">
-                            <h2>Recent Tickets</h2>
-                            <button class="btn btn-sm" onclick="fetchData()">Refresh</button>
-                        </div>
-                        <div class="table-responsive">
-                            <table id="tickets-table">
-                                <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Title</th>
-                                        <th>Priority</th>
-                                        <th>Status</th>
-                                        <th>Queue</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <!-- Populated by JS -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <div class="card-header">
-                            <h2>Live Activity Log</h2>
-                        </div>
-                        <div class="timeline" id="activity-timeline">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
+        </div>
+        <form id="login-form">
+            <label class="field">
+                <span>Email</span>
+                <input type="email" name="email" autocomplete="email" required>
+            </label>
+            <label class="field">
+                <span>Password</span>
+                <input type="password" name="password" autocomplete="current-password" required>
+            </label>
+            <button type="submit" class="btn btn-primary btn-block">
+                <span>Sign in</span>
+            </button>
+            <div id="login-error" class="auth-error" hidden></div>
+        </form>
+        <div class="auth-hint">
+            <strong>Demo credentials</strong>
+            <code>admin@vanguardops.local</code> / <code>ChangeMe!2024</code>
+        </div>
     </div>
-    <script src="/static/js/app.js"></script>
+</div>
+
+<!-- ============================== APP ================================ -->
+<div class="app-container" id="app-container" hidden>
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="logo">VO</div>
+            <h2>VanguardOps</h2>
+        </div>
+        <nav>
+            <a class="nav-item active" data-view="dashboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+                Dashboard
+            </a>
+            <a class="nav-item" data-view="tickets">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"/></svg>
+                Tickets
+            </a>
+            <a class="nav-item" data-view="assets">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12V7a2 2 0 012-2h10a2 2 0 012 2v5m-14 0v5a2 2 0 002 2h10a2 2 0 002-2v-5m-14 0h14M9 9h.01M9 15h.01"/></svg>
+                Assets
+            </a>
+            <a class="nav-item" data-view="workflows">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                Workflows
+            </a>
+            <a class="nav-item" data-view="audit">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Audit Log
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="env-badge" id="env-badge">v—</div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <header class="topbar">
+            <div class="breadcrumbs"><span id="view-title">Dashboard</span></div>
+            <div class="user-profile">
+                <div class="health-pill" id="health-pill">
+                    <span class="dot"></span><span>checking</span>
+                </div>
+                <div class="user-meta">
+                    <span class="user-email" id="user-email">—</span>
+                    <span class="user-role" id="user-role">—</span>
+                </div>
+                <button class="btn btn-ghost btn-sm" id="logout-btn">Sign out</button>
+            </div>
+        </header>
+
+        <!-- Toast container -->
+        <div id="toast-host" class="toast-host"></div>
+
+        <!-- DASHBOARD ----------------------------------------------------->
+        <section class="content-view" data-view="dashboard">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3 class="stat-title">Open Tickets</h3>
+                    <div class="stat-value" id="stat-tickets">0</div>
+                    <div class="stat-sub" id="stat-tickets-sub">—</div>
+                </div>
+                <div class="stat-card">
+                    <h3 class="stat-title">Critical SLA</h3>
+                    <div class="stat-value text-danger" id="stat-critical">0</div>
+                    <div class="stat-sub">priority CRITICAL</div>
+                </div>
+                <div class="stat-card">
+                    <h3 class="stat-title">Workflows in flight</h3>
+                    <div class="stat-value text-info" id="stat-workflows">0</div>
+                    <div class="stat-sub">PENDING + RUNNING</div>
+                </div>
+                <div class="stat-card">
+                    <h3 class="stat-title">Audit Events</h3>
+                    <div class="stat-value text-success" id="stat-events">0</div>
+                    <div class="stat-sub">total recorded</div>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Recent Tickets</h2>
+                        <button class="btn btn-sm" data-go-view="tickets">Manage</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr><th>ID</th><th>Title</th><th>Priority</th><th>Status</th><th>Queue</th></tr>
+                            </thead>
+                            <tbody id="dashboard-tickets-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Live Activity</h2>
+                        <span class="live-pill"><span class="dot"></span>live</span>
+                    </div>
+                    <div class="timeline" id="dashboard-timeline"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TICKETS ------------------------------------------------------->
+        <section class="content-view" data-view="tickets" hidden>
+            <div class="page-header">
+                <div>
+                    <h1>Tickets</h1>
+                    <p>Triage, assignment and SLA tracking.</p>
+                </div>
+                <button class="btn btn-primary" data-open-modal="ticket-modal" data-role-min="operator">
+                    + New ticket
+                </button>
+            </div>
+
+            <div class="card">
+                <div class="card-header card-toolbar">
+                    <div class="filters">
+                        <select id="ticket-filter-status">
+                            <option value="">All statuses</option>
+                            <option value="OPEN">Open</option>
+                            <option value="IN_PROGRESS">In progress</option>
+                            <option value="RESOLVED">Resolved</option>
+                            <option value="CLOSED">Closed</option>
+                        </select>
+                        <select id="ticket-filter-priority">
+                            <option value="">All priorities</option>
+                            <option value="CRITICAL">Critical</option>
+                            <option value="HIGH">High</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="LOW">Low</option>
+                        </select>
+                        <button class="btn btn-sm" id="ticket-filter-apply">Apply</button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th><th>Title</th><th>Category</th>
+                                <th>Priority</th><th>Status</th><th>Queue</th>
+                                <th>Due</th><th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tickets-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ASSETS -------------------------------------------------------->
+        <section class="content-view" data-view="assets" hidden>
+            <div class="page-header">
+                <div>
+                    <h1>Assets</h1>
+                    <p>Infrastructure inventory.</p>
+                </div>
+                <button class="btn btn-primary" data-open-modal="asset-modal" data-role-min="operator">
+                    + New asset
+                </button>
+            </div>
+            <div class="card">
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th><th>Name</th><th>Type</th>
+                                <th>Status</th><th>IP</th><th>Owner</th><th>Location</th>
+                            </tr>
+                        </thead>
+                        <tbody id="assets-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- WORKFLOWS ----------------------------------------------------->
+        <section class="content-view" data-view="workflows" hidden>
+            <div class="page-header">
+                <div>
+                    <h1>Workflows</h1>
+                    <p>Async automation runs (Celery).</p>
+                </div>
+                <button class="btn btn-primary" data-open-modal="workflow-modal" data-role-min="operator">
+                    + New workflow
+                </button>
+            </div>
+            <div class="card">
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th><th>Name</th><th>Trigger</th>
+                                <th>Status</th><th>Ticket</th><th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody id="workflows-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- AUDIT --------------------------------------------------------->
+        <section class="content-view" data-view="audit" hidden>
+            <div class="page-header">
+                <div>
+                    <h1>Audit Log</h1>
+                    <p>Immutable timeline of every domain event.</p>
+                </div>
+                <span class="live-pill"><span class="dot"></span>live · auto refresh 5s</span>
+            </div>
+            <div class="card">
+                <div class="timeline timeline-wide" id="audit-timeline"></div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<!-- ====================== MODAL: New ticket ========================== -->
+<div class="modal" id="ticket-modal" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card">
+        <header><h2>New ticket</h2><button class="icon-btn" data-close-modal>×</button></header>
+        <form id="ticket-form">
+            <div class="grid-2">
+                <label class="field"><span>Title</span><input name="title" required maxlength="255"></label>
+                <label class="field">
+                    <span>Severity</span>
+                    <select name="severity" required>
+                        <option value="LOW">Low</option>
+                        <option value="MEDIUM" selected>Medium</option>
+                        <option value="HIGH">High</option>
+                        <option value="CRITICAL">Critical</option>
+                    </select>
+                </label>
+            </div>
+            <label class="field">
+                <span>Description</span>
+                <textarea name="description" rows="3" required maxlength="4000"></textarea>
+            </label>
+            <div class="grid-2">
+                <label class="field">
+                    <span>Category</span>
+                    <select name="category">
+                        <option value="">— none —</option>
+                        <option value="password_reset">password_reset</option>
+                        <option value="connectivity">connectivity</option>
+                        <option value="hardware">hardware</option>
+                        <option value="network">network</option>
+                        <option value="security">security</option>
+                        <option value="endpoint_health">endpoint_health</option>
+                        <option value="access">access</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Asset ID (optional)</span>
+                    <input name="asset_id" type="number" min="1">
+                </label>
+            </div>
+            <footer>
+                <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </footer>
+        </form>
+    </div>
+</div>
+
+<!-- ====================== MODAL: New asset =========================== -->
+<div class="modal" id="asset-modal" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card">
+        <header><h2>New asset</h2><button class="icon-btn" data-close-modal>×</button></header>
+        <form id="asset-form">
+            <div class="grid-2">
+                <label class="field"><span>Name</span><input name="name" required maxlength="255"></label>
+                <label class="field">
+                    <span>Type</span>
+                    <select name="asset_type" required>
+                        <option value="SERVER">Server</option>
+                        <option value="WORKSTATION">Workstation</option>
+                        <option value="NETWORK_DEVICE">Network device</option>
+                        <option value="APPLICATION">Application</option>
+                        <option value="OTHER">Other</option>
+                    </select>
+                </label>
+            </div>
+            <div class="grid-2">
+                <label class="field"><span>IP address</span><input name="ip_address" placeholder="10.0.0.1"></label>
+                <label class="field">
+                    <span>Status</span>
+                    <select name="status">
+                        <option value="ACTIVE" selected>Active</option>
+                        <option value="INACTIVE">Inactive</option>
+                        <option value="MAINTENANCE">Maintenance</option>
+                        <option value="RETIRED">Retired</option>
+                    </select>
+                </label>
+            </div>
+            <div class="grid-2">
+                <label class="field"><span>Owner</span><input name="owner"></label>
+                <label class="field"><span>Location</span><input name="location"></label>
+            </div>
+            <label class="field"><span>Description</span><textarea name="description" rows="2"></textarea></label>
+            <footer>
+                <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </footer>
+        </form>
+    </div>
+</div>
+
+<!-- ====================== MODAL: New workflow ======================== -->
+<div class="modal" id="workflow-modal" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card">
+        <header><h2>New workflow</h2><button class="icon-btn" data-close-modal>×</button></header>
+        <form id="workflow-form">
+            <div class="grid-2">
+                <label class="field">
+                    <span>Name</span>
+                    <select name="name" required>
+                        <option value="wf_auto_reset">wf_auto_reset</option>
+                        <option value="wf_ping_trace">wf_ping_trace</option>
+                        <option value="wf_connectivity_triage">wf_connectivity_triage</option>
+                        <option value="wf_system_diag">wf_system_diag</option>
+                    </select>
+                </label>
+                <label class="field"><span>Trigger</span><input name="trigger_type" value="manual" required></label>
+            </div>
+            <label class="field">
+                <span>Linked ticket ID (optional)</span>
+                <input name="ticket_id" type="number" min="1">
+            </label>
+            <label class="field">
+                <span>Description</span>
+                <textarea name="description" rows="2"></textarea>
+            </label>
+            <footer>
+                <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </footer>
+        </form>
+    </div>
+</div>
+
+<!-- ============== MODAL: Ticket transition (PATCH status) ============= -->
+<div class="modal" id="ticket-status-modal" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card">
+        <header><h2>Update ticket status</h2><button class="icon-btn" data-close-modal>×</button></header>
+        <form id="ticket-status-form">
+            <input type="hidden" name="ticket_id">
+            <p class="muted">Transitioning ticket <strong id="ts-ticket-id"></strong>.</p>
+            <label class="field">
+                <span>New status</span>
+                <select name="status" required>
+                    <option value="OPEN">OPEN</option>
+                    <option value="IN_PROGRESS">IN_PROGRESS</option>
+                    <option value="RESOLVED">RESOLVED</option>
+                    <option value="CLOSED">CLOSED</option>
+                </select>
+            </label>
+            <footer>
+                <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+                <button type="submit" class="btn btn-primary">Apply</button>
+            </footer>
+        </form>
+    </div>
+</div>
+
+<script src="/static/js/app.js" type="module"></script>
 </body>
 </html>

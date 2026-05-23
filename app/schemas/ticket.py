@@ -1,38 +1,52 @@
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional
+"""Ticket schemas (input + output)."""
+
+from __future__ import annotations
+
 from datetime import datetime
-from app.models.ticket import TicketStatus, TicketPriority, TicketSeverity
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.ticket import TicketPriority, TicketSeverity, TicketStatus
+
 
 class TicketBase(BaseModel):
-    title: str = Field(..., description="Título corto del incidente")
-    description: str = Field(..., description="Descripción detallada del incidente")
-    category: Optional[str] = None
-    status: TicketStatus = Field(default=TicketStatus.OPEN)
-    priority: TicketPriority = Field(default=TicketPriority.MEDIUM)
-    severity: TicketSeverity = Field(default=TicketSeverity.MEDIUM)
-    reporter: Optional[str] = None
-    assigned_to: Optional[str] = None
-    due_at: Optional[datetime] = None
-    asset_id: Optional[int] = None
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1, max_length=4000)
+    category: str | None = Field(default=None, max_length=64)
+    severity: TicketSeverity = TicketSeverity.MEDIUM
+    reporter: str | None = Field(default=None, max_length=255)
+    asset_id: int | None = None
+
 
 class TicketCreate(TicketBase):
-    pass
+    """Payload accepted by ``POST /tickets``.
+
+    ``priority``, ``status``, ``assigned_to`` and ``due_at`` are *derived*
+    server-side and intentionally omitted from this schema to avoid clients
+    overriding the SLA / triage logic.
+    """
+
 
 class TicketUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    status: Optional[TicketStatus] = None
-    priority: Optional[TicketPriority] = None
-    severity: Optional[TicketSeverity] = None
-    reporter: Optional[str] = None
-    assigned_to: Optional[str] = None
-    due_at: Optional[datetime] = None
-    asset_id: Optional[int] = None
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, min_length=1, max_length=4000)
+    category: str | None = Field(default=None, max_length=64)
+    status: TicketStatus | None = None
+    priority: TicketPriority | None = None
+    severity: TicketSeverity | None = None
+    reporter: str | None = Field(default=None, max_length=255)
+    assigned_to: str | None = Field(default=None, max_length=255)
+    due_at: datetime | None = None
+    asset_id: int | None = None
+
 
 class TicketRead(TicketBase):
     id: int
+    status: TicketStatus
+    priority: TicketPriority
+    assigned_to: str | None
+    due_at: datetime | None
     created_at: datetime
     updated_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
