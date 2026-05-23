@@ -125,9 +125,7 @@ class TokenBlacklist:
             if self._fallback == "open":
                 FAIL_OPEN_HITS.inc()
                 return False
-            raise InvalidCredentialsError(
-                "Token verification temporarily unavailable"
-            ) from exc
+            raise InvalidCredentialsError("Token verification temporarily unavailable") from exc
 
     def revoke(self, jti: str, exp_unix: int) -> None:
         """Mark ``jti`` as revoked until its natural expiry.

@@ -181,9 +181,7 @@ def test_logout_also_revokes_refresh_token_when_provided(
     assert len(response.json()["revoked_jtis"]) == 2
 
     # Refresh attempt with the revoked refresh token must 401.
-    refresh_attempt = client.post(
-        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    refresh_attempt = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert refresh_attempt.status_code == 401
 
 

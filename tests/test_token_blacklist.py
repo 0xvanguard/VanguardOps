@@ -24,7 +24,6 @@ from app.services.token_blacklist import (
 )
 from tests._fakes import FakeRedis
 
-
 # ---------------------------------------------------------------------------
 # Layer 1: TokenBlacklist class
 # ---------------------------------------------------------------------------

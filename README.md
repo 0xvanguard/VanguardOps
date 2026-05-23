@@ -23,7 +23,7 @@ log de actividad auditable de cada paso.
 | **Ruteo a equipos** | Asignación inicial automática (L1 Service Desk, L2 Network, L3 Security, etc.). |
 | **Workflows asíncronos** | Celery + Redis ejecutan tareas (reset de contraseña, ping/traceroute, diagnósticos) con reintentos y prevención de duplicados. |
 | **Auditoría inmutable** | Cada evento de dominio (creación, transición de estado, ejecución, fallo) queda registrado en `activity_logs`. |
-| **Autenticación JWT + RBAC** | Tres roles (`admin`, `operator`, `viewer`) con jerarquía. Bcrypt para passwords, refresh tokens, `jti` por token. |
+| **Autenticación JWT + RBAC** | Tres roles (`admin`, `operator`, `viewer`) con jerarquía. Bcrypt para passwords, refresh tokens, `jti` por token, **logout con revocación inmediata vía blacklist en Redis** ([ADR-007](docs/adr/007-jwt-blacklist-fail-closed.md)). |
 | **State machine de tickets** | Transiciones validadas (`OPEN → IN_PROGRESS → RESOLVED → CLOSED`), no se permiten saltos arbitrarios. |
 | **Errores RFC 7807** | Respuestas `application/problem+json` con `type`, `title`, `status`, `detail`, `code` y `request_id`. |
 | **Observabilidad first-class** | `/livez`, `/readyz`, `/metrics` (Prometheus), logs estructurados JSON, `X-Request-ID` por request. |
@@ -170,6 +170,12 @@ curl http://localhost:8000/api/v1/tickets/ \
 curl -X POST http://localhost:8000/api/v1/auth/refresh \
   -H "Content-Type: application/json" \
   -d '{"refresh_token":"..."}'
+
+# 4) Cerrar sesión (revoca el access token, opcionalmente también el refresh)
+curl -X POST http://localhost:8000/api/v1/auth/logout \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"..."}'   # opcional
 ```
 
 ### Matriz de permisos
