@@ -7,8 +7,10 @@ from app.database import Base
 class WorkflowStatus(str, enum.Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
-    COMPLETED = "COMPLETED"
+    SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+    RETRYING = "RETRYING"
+    CANCELLED = "CANCELLED"
 
 class Workflow(Base):
     __tablename__ = "workflows"

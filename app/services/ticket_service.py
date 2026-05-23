@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+# pyrefly: ignore [missing-import]
 from sqlalchemy.orm import Session
 from app.schemas.ticket import TicketCreate
 from app.services.rules import calculate_priority, SLA_HOURS
@@ -11,12 +12,21 @@ class TicketService:
     def process_new_ticket(db: Session, ticket_in: TicketCreate):
         """
         Orquesta la creación de un ticket:
+        0. Valida integridad de relaciones (ej: asset_id)
         1. Calcula prioridad final.
         2. Asigna SLA (due_at).
         3. Realiza asignación inicial si está vacía.
         4. Guarda en BD.
         5. Dispara workflows asociados al tipo de evento.
         """
+        # 0. Validar Asset si se provee
+        if ticket_in.asset_id:
+            asset = crud.asset.get(db=db, id=ticket_in.asset_id)
+            if not asset:
+                # pyrefly: ignore [missing-import]
+                from fastapi import HTTPException
+                raise HTTPException(status_code=400, detail=f"Asset ID {ticket_in.asset_id} no existe")
+                
         # Calcular Prioridad Real
         priority = calculate_priority(ticket_in.severity, ticket_in.category)
         ticket_in.priority = priority
