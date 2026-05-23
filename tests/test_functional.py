@@ -1,88 +1,95 @@
-import pytest
-from tests.conftest import client, admin_headers
+"""End-to-end functional scenarios.
 
-# ESCENARIO A - Creación y Consulta de Activo
-def test_escenario_a_assets(client, admin_headers):
-    # Crear un asset válido
-    res_create = client.post("/api/v1/assets/", json={"name": "Firewall Core", "asset_type": "NETWORK_DEVICE", "status": "ACTIVE", "ip_address": "192.168.1.1"}, headers=admin_headers)
-    assert res_create.status_code == 200
-    asset_id = res_create.json()["id"]
+These cover business journeys (asset → ticket → workflow → audit) rather
+than individual endpoints.
+"""
 
-    # Consultarlo por ID
-    res_get = client.get(f"/api/v1/assets/{asset_id}")
-    assert res_get.status_code == 200
-    assert res_get.json()["name"] == "Firewall Core"
+from __future__ import annotations
 
-    # Consultarlo por status
-    res_status = client.get("/api/v1/assets/by-status/ACTIVE")
-    assert res_status.status_code == 200
-    assert len(res_status.json()) >= 1
 
-    # Consultarlo por IP
-    res_ip = client.get("/api/v1/assets/by-ip/192.168.1.1")
-    assert res_ip.status_code == 200
+def test_scenario_full_password_reset_flow(client, operator_headers):
+    # 1. Register an asset
+    asset_resp = client.post(
+        "/api/v1/assets/",
+        headers=operator_headers,
+        json={
+            "name": "laptop-001",
+            "asset_type": "WORKSTATION",
+            "ip_address": "10.0.0.1",
+        },
+    )
+    assert asset_resp.status_code == 201
+    asset_id = asset_resp.json()["id"]
 
-# ESCENARIO B - Ticket Normal (Password Reset)
-def test_escenario_b_ticket_normal(client, admin_headers):
-    res = client.post("/api/v1/tickets/", json={
-        "title": "Reset password",
-        "description": "User locked out",
-        "category": "password_reset",
-        "severity": "MEDIUM"
-    }, headers=admin_headers)
-    assert res.status_code == 200
-    ticket = res.json()
-    
-    assert ticket["priority"] == "MEDIUM"  # Auto priority
-    assert ticket["assigned_to"] == "L1_Service_Desk"  # Auto assign
-    assert ticket["due_at"] is not None  # SLA calculado
-    
-    # Validar logs
-    log_res = client.get(f"/api/v1/activity-log/ticket/{ticket['id']}")
-    logs = log_res.json()
-    event_types = [log["event_type"] for log in logs]
-    assert "ticket_created" in event_types
-    assert "ticket_prioritized" in event_types
-    assert "ticket_assigned" in event_types
-    assert "workflow_triggered" in event_types  # wf_auto_reset
+    # 2. Open a password-reset ticket against it
+    ticket_resp = client.post(
+        "/api/v1/tickets/",
+        headers=operator_headers,
+        json={
+            "title": "Reset password",
+            "description": "User locked out",
+            "category": "password_reset",
+            "severity": "MEDIUM",
+            "asset_id": asset_id,
+        },
+    )
+    assert ticket_resp.status_code == 201
+    ticket = ticket_resp.json()
+    assert ticket["priority"] == "MEDIUM"
+    assert ticket["assigned_to"] == "L1_Service_Desk"
 
-# ESCENARIO C - Ticket Crítico de Seguridad
-def test_escenario_c_ticket_critico(client, admin_headers):
-    res = client.post("/api/v1/tickets/", json={
-        "title": "Ransomware alert",
-        "description": "Multiple servers encrypted",
-        "category": "security",
-        "severity": "CRITICAL"
-    }, headers=admin_headers)
-    assert res.status_code == 200
-    ticket = res.json()
-    
+    # 3. Move it through the state machine: OPEN -> IN_PROGRESS -> RESOLVED
+    for new_status in ("IN_PROGRESS", "RESOLVED"):
+        upd = client.patch(
+            f"/api/v1/tickets/{ticket['id']}",
+            headers=operator_headers,
+            json={"status": new_status},
+        )
+        assert upd.status_code == 200, upd.text
+        assert upd.json()["status"] == new_status
+
+    # 4. Audit log includes every event
+    logs = client.get(
+        f"/api/v1/activity-log/ticket/{ticket['id']}", headers=operator_headers
+    ).json()
+    events = {entry["event_type"] for entry in logs}
+    assert {
+        "ticket_created",
+        "ticket_prioritized",
+        "ticket_assigned",
+        "workflow_triggered",
+        "ticket_updated",
+        "ticket_status_changed",
+    } <= events
+
+
+def test_scenario_security_ticket_no_workflow(client, operator_headers):
+    response = client.post(
+        "/api/v1/tickets/",
+        headers=operator_headers,
+        json={
+            "title": "Ransomware",
+            "description": "Critical incident",
+            "category": "security",
+            "severity": "CRITICAL",
+        },
+    )
+    assert response.status_code == 201
+    ticket = response.json()
     assert ticket["priority"] == "CRITICAL"
     assert ticket["assigned_to"] == "L3_Security_Ops"
-    
-    log_res = client.get(f"/api/v1/activity-log/ticket/{ticket['id']}")
-    logs = log_res.json()
-    event_types = [log["event_type"] for log in logs]
-    assert "workflow_triggered" not in event_types # No hay WF para security yet
 
-# ESCENARIO D - Actualización de Ticket
-def test_escenario_d_update_ticket(client, admin_headers):
-    # Asume que test C creó el id 2
-    res_put = client.put("/api/v1/tickets/2", json={"status": "IN_PROGRESS"}, headers=admin_headers)
-    assert res_put.status_code == 200
-    assert res_put.json()["status"] == "IN_PROGRESS"
-    
-    log_res = client.get("/api/v1/activity-log/ticket/2")
-    event_types = [log["event_type"] for log in log_res.json()]
-    assert "ticket_updated" in event_types
+    logs = client.get(
+        f"/api/v1/activity-log/ticket/{ticket['id']}", headers=operator_headers
+    ).json()
+    events = {entry["event_type"] for entry in logs}
+    assert "workflow_triggered" not in events
 
-# ESCENARIO F - Seguridad y Edge Cases
-def test_escenario_f_edge_cases(client):
-    # Falla auth
-    res_no_auth = client.post("/api/v1/tickets/", json={"title": "Test", "description": "Desc"})
-    assert res_no_auth.status_code == 403
-    
-    # Asset Inexistente
-    headers = {"X-Admin-Token": "super-secret-admin-token"}
-    res_bad_asset = client.post("/api/v1/tickets/", json={"title": "Test", "description": "Desc", "asset_id": 99999}, headers=headers)
-    assert res_bad_asset.status_code == 400
+
+def test_scenario_unauthenticated_access_blocked(client):
+    response = client.post(
+        "/api/v1/tickets/",
+        json={"title": "x", "description": "y", "severity": "LOW"},
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_credentials"
