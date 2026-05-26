@@ -1,42 +1,40 @@
-"""Workflow schemas."""
-
-from __future__ import annotations
-
-from datetime import datetime
-from typing import Any
-
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel, ConfigDict, Field
-
+from typing import Optional, Dict, Any
+from datetime import datetime
 from app.models.workflow import WorkflowStatus
 
-
 class WorkflowBase(BaseModel):
-    name: str = Field(..., min_length=1, max_length=128)
-    trigger_type: str = Field(..., min_length=1, max_length=64)
-    description: str | None = Field(default=None, max_length=1000)
-    ticket_id: int | None = None
-    config_data: dict[str, Any] | None = None
-
+    name: str = Field(..., description="Nombre del flujo de trabajo")
+    trigger_type: str = Field(..., description="Evento que dispara el flujo (ej: ticket_created)")
+    description: Optional[str] = None
+    status: WorkflowStatus = Field(default=WorkflowStatus.PENDING)
+    ticket_id: Optional[int] = None
+    config_data: Optional[Dict[str, Any]] = None
 
 class WorkflowCreate(WorkflowBase):
-    """``status`` is forced to PENDING server-side; not accepted from clients."""
-
+    pass
 
 class WorkflowUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=128)
-    trigger_type: str | None = Field(default=None, min_length=1, max_length=64)
-    description: str | None = Field(default=None, max_length=1000)
-    status: WorkflowStatus | None = None
-    ticket_id: int | None = None
-    config_data: dict[str, Any] | None = None
-    execution_logs: dict[str, Any] | None = None
-
+    name: Optional[str] = None
+    trigger_type: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[WorkflowStatus] = None
+    ticket_id: Optional[int] = None
+    config_data: Optional[Dict[str, Any]] = None
+    execution_logs: Optional[Dict[str, Any]] = None
 
 class WorkflowRead(WorkflowBase):
     id: int
-    status: WorkflowStatus
-    execution_logs: dict[str, Any] | None
+    execution_logs: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
+
+    # Execution-tracking metadata (read-only, populated by CRUD layer)
+    attempt_count: int = 0
+    next_retry_at: Optional[datetime] = None
+    claimed_at: Optional[datetime] = None
+    claimed_by: Optional[str] = None
+    error_detail: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import enum
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, ForeignKey, String
+from sqlalchemy import DateTime, Integer, JSON, ForeignKey, String, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,3 +55,33 @@ class Workflow(Base, TimestampMixin):
     # Free-form JSON for inputs / results; schema is per-workflow-name.
     config_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     execution_logs: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    # ------------------------------------------------------------------ #
+    # Execution-tracking metadata                                          #
+    # ------------------------------------------------------------------ #
+
+    # Retry / backoff control
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    """How many times this workflow has been attempted (claimed + executed)."""
+
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    """Earliest time at which the row may be claimed again after a retryable failure."""
+
+    # Worker identity (useful for heartbeat-based stale detection)
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    """Wall-clock time at which the current (or last) worker claimed the row."""
+
+    claimed_by: Mapped[str | None] = mapped_column(
+        String(256), nullable=True
+    )
+    """Opaque worker identifier (e.g. hostname + PID, Celery task ID)."""
+
+    # Last failure reason — structured string, not full stack trace
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """Short human-readable description of the last error for quick triage."""
